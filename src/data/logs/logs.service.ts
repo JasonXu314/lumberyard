@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { DATA_DIR } from 'src/data/constants';
-import { LogEntry } from 'src/data/data.models';
 import { DataService } from 'src/data/data.service';
 import { FSService } from 'src/fs/fs.service';
 import { LOGFILE_DAY_FORMAT, composeLogMessage, todayLogFile } from 'src/utils/utils';
 import { CreateLogDTO } from './dtos';
+import { LogEntry, defaultSelect } from './models';
 
 export interface LogFilterOptions {
 	query: string;
@@ -19,11 +19,19 @@ export interface LogFilterOptions {
 export class LogsService {
 	public constructor(private readonly data: DataService, private readonly fs: FSService) {}
 
-	public getLogs(project: string, { query, byMessage, byScope, byJSON, levelOptions }: LogFilterOptions): LogEntry[] {
+	public async getLogs(project: string, { query, byMessage, byScope, byJSON, levelOptions }: LogFilterOptions): Promise<LogEntry[]> {
 		const q = query.toLowerCase();
 
-		return this.data.getLogs(project).filter((entry) => {
-			if (levelOptions[entry.level] === 'Never Show') {
+		const logs = await this.data.logEntry.findMany({
+			where: {
+				projectId: project
+			},
+			orderBy: { timestamp: 'asc' },
+			...defaultSelect
+		});
+
+		return logs.filter((entry) => {
+			if (levelOptions[entry.level.tag] === 'Never Show') {
 				return false;
 			}
 
@@ -34,7 +42,7 @@ export class LogsService {
 			].filter<string>((e): e is string => e !== null);
 
 			return (
-				levelOptions[entry.level] === 'Always Show' ||
+				levelOptions[entry.level.tag] === 'Always Show' ||
 				values.some((value) => {
 					const vws = value.replace(/\s/g, '');
 					const qws = q.replace(/\s/g, '');
@@ -53,25 +61,29 @@ export class LogsService {
 		});
 	}
 
-	public makeLog(project: string, { level, message, jsonDump, scope }: CreateLogDTO): LogEntry {
-		// TODO: validate level
+	public async makeLog(project: string, { level, message, jsonDump, scope }: CreateLogDTO): Promise<LogEntry> {
 		const now = DateTime.now();
-		const timestamp = now.toFormat('MM/dd/yyyy, hh:mm:ss a');
-		const timestampObj = now.toObject();
+		const timestamp = now.toJSDate();
 
-		const logs = this.data.getLogs(project);
-		const newEntry = { level, message, jsonDump, scope, timestamp, timestampObj };
-
-		this.data.setLogs(project, [...logs, newEntry]);
+		const newEntry = await this.data.logEntry.create({
+			data: {
+				projectId: project,
+				logLevel: level,
+				message,
+				jsonDump,
+				scope,
+				timestamp
+			},
+			...defaultSelect
+		});
 		this.fs.append(`${DATA_DIR}/${project}/${todayLogFile()}`, composeLogMessage(newEntry));
-
 		this._cleanup(project);
 
 		return newEntry;
 	}
 
-	private _cleanup(project: string): void {
-		const { retention } = this.data.projects.find((proj) => proj.id === project)!;
+	private async _cleanup(project: string): Promise<void> {
+		const { retention } = await this.data.project.findUniqueOrThrow({ where: { id: project } });
 		const logFiles = this.fs
 			.readdir(`${DATA_DIR}/${project}`)
 			.filter((file) => file.endsWith('.log'))
@@ -85,15 +97,8 @@ export class LogsService {
 		if (logFiles.length > retention) {
 			const oldest = logFiles.at(-1)!;
 			const purgedDay = DateTime.fromFormat(oldest.split('.')[0], LOGFILE_DAY_FORMAT);
-			const logs = this.data.getLogs(project);
 
-			const newLogs = logs.filter((entry) => {
-				const logTime = DateTime.fromObject(entry.timestampObj);
-
-				return !logTime.hasSame(purgedDay, 'day');
-			});
-
-			this.data.setLogs(project, newLogs);
+			await this.data.logEntry.deleteMany({ where: { AND: [{ projectId: project }, { timestamp: { gte: purgedDay.toJSDate() } }] } });
 			this.fs.rm(oldest);
 		}
 	}

@@ -1,7 +1,6 @@
 import { DateTime } from 'luxon';
-import { LogEntry } from 'src/data/data.models';
+import { LogEntry } from 'src/data/logs/models';
 
-const DATETIME_PADDING = new Array(28).fill(' ').join('');
 export const LOGFILE_DAY_FORMAT = 'y-M-dd';
 
 export function fi<T>(): T {
@@ -22,18 +21,13 @@ export function todayLogFile(): string {
 }
 
 export function composeLogMessage(entry: LogEntry): string {
-	const dump =
-		entry.jsonDump !== undefined
-			? `\n${DATETIME_PADDING}JSON Dump:\n${JSON.stringify(entry.jsonDump, null, 4)
-					.split('\n')
-					.map((str) => DATETIME_PADDING + str)
-					.join('\n')}`
-			: '';
+	const dump = entry.jsonDump !== null ? `\nJSON Dump:\n${JSON.stringify(entry.jsonDump, null, 4)}` : '';
+	const timestamp = DateTime.fromJSDate(entry.timestamp).toFormat('MM/dd/yyyy, hh:mm:ss a');
 
-	if (entry.scope !== undefined) {
-		return `${entry.timestamp}:\t${entry.level} [${entry.scope}] ${entry.message}${dump}\n`;
+	if (entry.scope !== null) {
+		return `${timestamp}:\n${entry.level.tag} [${entry.scope}] ${entry.message}${dump}\n\n`;
 	} else {
-		return `${entry.timestamp}:\t${entry.level} ${entry.message}${dump}\n`;
+		return `${timestamp}:\n${entry.level.tag} ${entry.message}${dump}\n\n`;
 	}
 }
 

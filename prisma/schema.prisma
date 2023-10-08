@@ -1,0 +1,45 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+    provider = "mysql"
+    url      = env("DATABASE_URL")
+}
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+model LogLevel {
+    tag       String
+    severity  Int
+    color     String
+    projectId String
+
+    project Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    entries LogEntry[]
+
+    @@id([tag, projectId])
+}
+
+model Project {
+    id        String @id
+    name      String
+    retention Int
+
+    logLevels LogLevel[]
+    logs      LogEntry[]
+}
+
+model LogEntry {
+    id        Int      @id @default(autoincrement())
+    logLevel  String
+    message   String
+    timestamp DateTime
+    jsonDump  Json?
+    scope     String?
+    projectId String
+
+    project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    level   LogLevel @relation(fields: [logLevel, projectId], references: [tag, projectId], onDelete: Cascade)
+}

@@ -1,20 +1,20 @@
-import { Body, Controller, Get, NotFoundException, Param, Post, Query, UseInterceptors } from '@nestjs/common';
-import { LogEntry } from 'src/data/data.models';
+import { Controller, Get, NotFoundException, Param, Query, UseInterceptors } from '@nestjs/common';
+import { DateTime } from 'luxon';
 import { $each, $if, $table, page } from 'src/utils/html';
 import { CheckboxInterceptor } from 'src/utils/interceptors/checkbox.interceptor';
 import { $logLevelStyles } from 'src/utils/templates';
-import { ProjectsService } from '../projects.service';
-import { CreateLogDTO, FilterDTO } from './dtos';
+import { ProjectsService } from '../projects/projects.service';
+import { FilterDTO } from './dtos';
 import { LogsService } from './logs.service';
 
-@Controller('/projects/:id/logs')
-export class LogsController {
+@Controller('/:id/logs')
+export class LogsClientController {
 	constructor(private readonly service: LogsService, private readonly projects: ProjectsService) {}
 
 	@Get('/')
 	@UseInterceptors(new CheckboxInterceptor('query', ['byMessage', 'byScope', 'byJSON']))
-	public index(@Param('id') id: string, @Query() { query = '', byMessage, byScope, byJSON, ...rest }: FilterDTO): string {
-		const project = this.projects.getProject(id);
+	public async index(@Param('id') id: string, @Query() { query = '', byMessage, byScope, byJSON, ...rest }: FilterDTO): Promise<string> {
+		const project = await this.projects.getProject(id);
 
 		if (!project) {
 			throw new NotFoundException(`Project ${id} not found`);
@@ -78,7 +78,7 @@ export class LogsController {
 				</form>
 			</details>
 			${$table(
-				this.service.getLogs(id, {
+				await this.service.getLogs(id, {
 					query,
 					byMessage,
 					byScope,
@@ -89,12 +89,12 @@ export class LogsController {
 			)`<th scope="col">${['Level', 'Timestamp', 'Scope', 'Message', 'JSON Dump']}</th>`(
 				(entry) => `
 				<tr>
-					<td class="__LOG_LEVEL_${entry.level}">${entry.level}</td>
-					<td>${entry.timestamp}</td>
-					<td>${entry.scope === undefined ? 'N/A' : entry.scope}</td>
+					<td class="__LOG_LEVEL_${entry.level.tag}">${entry.level.tag}</td>
+					<td>${DateTime.fromJSDate(entry.timestamp).toFormat('MM/dd/yyyy, hh:mm:ss a')}</td>
+					<td>${entry.scope === null ? 'N/A' : entry.scope}</td>
 					<td>${entry.message}</td>
 					<td>
-						${$if(entry.jsonDump !== undefined)`
+						${$if(entry.jsonDump !== null)`
 						<details>
 							<summary></summary>
 							<pre>${JSON.stringify(entry.jsonDump, null, 4)}</pre>
@@ -105,11 +105,6 @@ export class LogsController {
 			`
 			)}
 		`;
-	}
-
-	@Post('/')
-	public createLogAPI(@Param('id') id: string, @Body() data: CreateLogDTO): LogEntry {
-		return this.service.makeLog(id, data);
 	}
 }
 

@@ -37,4 +37,4 @@ lerna-debug.log*
 .env
 data/
 !src/data
-!src/projects/logs
+!src/data/logs
